@@ -9,8 +9,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime as dt
-from matplotlib.patches import Ellipse
-import shutil
 import pandas as pd
 import pickle
 import time
@@ -45,13 +43,13 @@ def Make_path_batch(
     ilt = -0.5/(lt*lt)
     T = np.arange(tmax)
 
-    Sigma = np.exp( ilt * (T.reshape(-1,1) - T.reshape(1,-1))**2)
+    Sigma = np.exp(ilt * (T.reshape(-1, 1) - T.reshape(1, -1))**2)
     Mu = np.zeros(tmax)
 
     np.random.seed(seed)
 
     traj = np.random.multivariate_normal(Mu, Sigma, (batch, 2))
-    traj = np.transpose(traj, (0,2,1))
+    traj = np.transpose(traj, (0, 2, 1))
 
     return traj
 
@@ -61,8 +59,7 @@ def Make_Video_batch(tmax=50,
     py=32,
     lt=5,
     batch=40,
-    seed=1,
-    r=3
+    r=3, constraint=True
     ):
     """
     params:
@@ -85,8 +82,12 @@ def Make_Video_batch(tmax=50,
     traj = traj0.copy()
 
     # convert trajectories to pixel dims
-    traj[:,:,0] = traj[:,:,0] * (px/5) + (0.5*px)
-    traj[:,:,1] = traj[:,:,1] * (py/5) + (0.5*py)
+    if not constraint:
+        traj[:, :, 0] = traj[:, :, 0] * (px / 5) + (0.5 * px)
+        traj[:, :, 1] = traj[:, :, 1] * (py / 5) + (0.5 * py)
+    else:
+        traj[:, :, 0] = traj[:, :, 0] * (px / 6.5) + (0.5 * px)
+        traj[:, :, 1] = traj[:, :, 1] * (py / 6.5) + (0.5 * py)
 
     rr = r*r
 
@@ -101,24 +102,23 @@ def Make_Video_batch(tmax=50,
         sq_x = (np.arange(px) - x)**2
         sq_y = (np.arange(py) - y)**2
 
-        sq = sq_x.reshape(1,-1) + sq_y.reshape(-1,1)
+        sq = sq_x.reshape(1, -1) + sq_y.reshape(-1, 1)
 
         image = 1*(sq < rr)
 
         return image
 
-    
     def pixelate_series(XY):
         vid = map(pixelate_frame, XY)
         vid = [v for v in vid]
         return np.asarray(vid)
-
 
     vid_batch = [pixelate_series(traj_i) for traj_i in traj]
 
     vid_batch = np.asarray(vid_batch)
 
     return traj0, vid_batch
+
 
 def play_video(vid_batch, j=0):
     """
@@ -142,7 +142,7 @@ def build_video_batch_graph(tmax=50,
     batch=1,
     seed=1,
     r=3,
-    dtype=tf.float32):
+    dtype=tf.float32, constraint=True):
 
     assert px==py, "video batch graph assumes square frames"
 
@@ -153,23 +153,20 @@ def build_video_batch_graph(tmax=50,
     K = tf.range(tmax, dtype=dtype)
     K = (tf.reshape(K, (tmax, 1)) - tf.reshape(K, (1, tmax)))**2
 
-    # print((K*ilt).get_shape())
-    # sys.exit()
-
-
-    K = tf.exp(K*ilt) + 0.00001*tf.eye(tmax, dtype=dtype)
+    K = tf.exp(K * ilt) + 0.00001 * tf.eye(tmax, dtype=dtype)
     chol_K = tf.Variable(tf.linalg.cholesky(K), trainable=False)
 
     ran_Z = tf.random.normal((tmax, 2*batch))
 
     paths = tf.matmul(chol_K, ran_Z)
     paths = tf.reshape(paths, (tmax, batch, 2))
-    paths = tf.transpose(paths, (1,0,2))
+    paths = tf.transpose(paths, (1, 0, 2))
 
     # assumes px = py
-    paths = paths*0.2*px + 0.5*px
-    # paths[:,:,0] = paths[:,:,0]*0.2*px + 0.5*px
-    # paths[:,:,1] = paths[:,:,1]*0.2*py + 0.5*py
+    if not constraint:
+        paths = paths * 0.2 * px + 0.5 * px
+    else:
+        paths = paths * (px / 6.5) + 0.5 * px
 
     vid_batch = []
 
@@ -179,12 +176,11 @@ def build_video_batch_graph(tmax=50,
     for b in range(batch):
         frames_tmax = []
         for t in range(tmax):
-            lx = tf.reshape((tf_px - paths[b,t,0])**2, (px, 1))
-            ly = tf.reshape((tf_py - paths[b,t,1])**2, (1, py))
+            lx = tf.reshape((tf_px - paths[b, t, 0])**2, (px, 1))
+            ly = tf.reshape((tf_py - paths[b, t, 1])**2, (1, py))
             frame = lx + ly < rr
-            frames_tmax.append(tf.reshape(frame, (1,1,px,py)))
+            frames_tmax.append(tf.reshape(frame, (1, 1, px, py)))
         vid_batch.append(tf.concat(frames_tmax, 1))
-        
 
     vid_batch = [tfmath_ops.cast(vid, dtype=dtype) for vid in vid_batch]
     vid_batch = tf.concat(vid_batch, 0)
@@ -285,7 +281,7 @@ def plot_latents(truevids,
     """
 
     if ax is None:
-        _, ax = plt.subplots(nplots,3, figsize=(6, 8))
+        _, ax = plt.subplots(nplots, 3, figsize=(8, 3 * nplots))
     
     for axi in ax:
         for axj in axi:
@@ -319,54 +315,34 @@ def plot_latents(truevids,
         vid = np.array([(t+4)*v for t,v in enumerate(vid)])
         flat_vid = np.max(vid, 0)*(1/(4+tmax))
         return flat_vid
-    
-    if reconvar is not None:
-        E = np.linalg.eig(reconvar[:nplots,:,:,:])
-        H = np.sqrt(E[0][:,:,0])
-        W = np.sqrt(E[0][:,:,1])
-        A = np.arctan2(E[1][:,:,0,1], E[1][:,:,0,0])*(360/(2*np.pi))
 
     def plot_set(i):
         # i is batch element = plot column
 
         # top row of plots is true data heatmap
         tv = make_heatmap(truevids[i,:,:,:])
-        ax[0][i].imshow(1-tv, origin='lower', cmap='Greys')
-        ax[0][i].axis('off')
-
+        ax[i, 0].imshow(1-tv, origin='lower', cmap='Greys')
+        ax[i, 0].axis('off')
 
         # middle row is trajectories
-        ax[1][i].plot(truepath[i,:,0], truepath[i,:,1])
-        ax[1][i].set_xlim([xmin, xmax])
-        ax[1][i].set_ylim([ymin, ymax])
-        ax[1][i].scatter(truepath[i,-1,0], truepath[i,-1,1])
-
+        ax[i, 1].plot(truepath[i,:,0], truepath[i,:,1])
+        ax[i, 1].set_xlim([xmin, xmax])
+        ax[i, 1].set_ylim([ymin, ymax])
+        ax[i, 1].scatter(truepath[i,-1,0], truepath[i,-1,1])
 
         if reconpath is not None:
-            ax[1][i].plot(reconpath[i,:,0], reconpath[i,:,1])
-            ax[1][i].scatter(reconpath[i,-1,0], reconpath[i,-1,1])
+            ax[i, 1].plot(reconpath[i,:,0], reconpath[i,:,1])
+            ax[i, 1].scatter(reconpath[i,-1,0], reconpath[i,-1,1])
 
         if paths is not None:
-            ax[1][i].plot(paths[i,:,0], paths[i,:,1])
-            ax[1][i].scatter(paths[i,-1,0], paths[i,-1,1])
-        
-        if reconvar is not None:
-            ells = [Ellipse(xy=reconpath[i,t,:], 
-                            width=W[i,t], 
-                            height=H[i,t], 
-                            angle=A[i,t]) for t in range(tmax)]
-            for e in ells:
-                ax[1][i].add_artist(e)
-                e.set_clip_box(ax[1][i].bbox)
-                e.set_alpha(0.25)
-                e.set_facecolor('C1')
+            ax[i, 1].plot(paths[i,:,0], paths[i,:,1])
+            ax[i, 1].scatter(paths[i,-1,0], paths[i,-1,1])
 
         # Third row is reconstructed video
         if reconvids is not None:
             rv = make_heatmap(reconvids[i,:,:,:])
-            ax[2][i].imshow(1-rv, origin='lower', cmap='Greys')
-            ax[2][i].axis('off')
-    
+            ax[i, 2].imshow(1-rv, origin='lower', cmap='Greys')
+            ax[i, 2].axis('off')
     
     for i in range(nplots):
         plot_set(i)
@@ -393,11 +369,11 @@ def make_checkpoint_folder(base_dir, expid=None, extra=""):
         os.makedirs(base_dir)
     
     # now make a unique folder inside the root for this experiments
-    filenum = str(len(os.listdir(base_dir))) + "_"+extra+"__on__"
+    filenum = str(len(os.listdir(base_dir))) + "_"+extra+"_on_"
 
     T = dt.now()
 
-    filetime = str(T.day)+"_"+str(T.month)+"_"+str(T.year) + "__at__"
+    filetime = str(T.day)+"_"+str(T.month)+"_"+str(T.year) + "_at_"
     filetime += str(T.hour)+"_"+str(T.minute)+"_"+str(T.second)
 
     # main folder
@@ -405,31 +381,30 @@ def make_checkpoint_folder(base_dir, expid=None, extra=""):
     os.makedirs(checkpoint_folder)
 
     # pictures folder
-    pic_folder = checkpoint_folder + "/pics/"
-    os.makedirs(pic_folder)
+    # pic_folder = checkpoint_folder + "/pics/"
+    # os.makedirs(pic_folder)
 
     # pickled results files
-    res_folder = checkpoint_folder + "/res/"
-    os.makedirs(res_folder)
+    # res_folder = checkpoint_folder + "/res/"
+    # os.makedirs(res_folder)
 
     # source code
-    src_folder = checkpoint_folder + "/sourcecode/"
-    os.makedirs(src_folder)
-    old_src_dir = os.path.dirname(os.path.abspath(__file__)) + "/"
-    src_files = os.listdir(old_src_dir)
-    print("\n\nCopying source Code to "+src_folder)
-    for f in src_files:
-        if ".py" in f:
-            src_file = old_src_dir + f
-            shutil.copy2(src_file, src_folder)
-            print(src_file)
-    print("\n")
+    # src_folder = checkpoint_folder + "/sourcecode/"
+    # os.makedirs(src_folder)
+    # old_src_dir = os.path.dirname(os.path.abspath(__file__)) + "/"
+    # src_files = os.listdir(old_src_dir)
+    # print("\n\nCopying source Code to "+src_folder)
+    # for f in src_files:
+    #     if ".py" in f:
+    #         src_file = old_src_dir + f
+    #         shutil.copy2(src_file, src_folder)
+    #         print(src_file)
+    # print("\n")
 
     # predictions folder, for plotting purposes
-    preds_folder = checkpoint_folder + "/preds/"
-    os.makedirs(preds_folder)
+    # preds_folder = checkpoint_folder + "/preds/"
+    # os.makedirs(preds_folder)
 
-    
     return checkpoint_folder + "/"
 
 

@@ -8,9 +8,8 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from utils import Make_Video_batch, make_checkpoint_folder, pandas_res_saver, \
+from utils import Make_Video_batch, make_checkpoint_folder, \
                   build_video_batch_graph, plot_latents, MSE_rotation
-from utils_circles_grid import Make_circles, Make_squares, plot_circle, plot_square
 from SVGPVAE_model import SVGP, build_SVGPVAE_elbo_graph
 from GPVAE_Pearce_model import build_pearce_elbo_graphs
 
@@ -19,20 +18,7 @@ tfk = tfp.math.psd_kernels
 
 
 def run_experiment(args):
-    """
-    Moving ball experiment.
-
-    :param args:
-    :return:
-    """
-    if args.save:
-        # Make a folder to save everything
-        extra = args.elbo + "_" + str(args.beta0)
-
-        chkpnt_dir = make_checkpoint_folder(args.base_dir, args.expid, extra)
-        pic_folder = chkpnt_dir + "pics/"
-        res_file = chkpnt_dir + "res/ELBO_pandas"
-        print("\nCheckpoint Directory:\n"+str(chkpnt_dir)+"\n")
+    """Moving ball experiment."""
 
     # Data synthesis settings
     batch = 35
@@ -69,10 +55,6 @@ def run_experiment(args):
         fig, ax = plt.subplots(4, 4, figsize=(8, 8), constrained_layout=True)
         plt.ion()
 
-    if args.squares_circles:
-        truth_c, V_c = Make_circles(tmax=tmax); batch_V_c = np.tile(V_c, (batch,1,1,1))
-        truth_sq, V_sq = Make_squares(tmax=tmax); batch_V_sq = np.tile(V_sq, (batch,1,1,1))
-
     # make sure everything is created in the same graph!
     graph = tf.Graph()
     with graph.as_default():
@@ -87,9 +69,7 @@ def run_experiment(args):
                 p_v, q_m, q_v, pred_vid, \
                 l_GP_x, l_GP_y, _ = build_pearce_elbo_graphs(vid_batch, beta, type_elbo=args.elbo, lt=model_lt,
                                                              GP_joint=args.GP_joint, GP_init=args.GP_init)
-
         else:  # SVGPVAE_Titsias, SVGPVAE_Hensman
-
             titsias = 'Titsias' in args.elbo
             fixed_gp_params = not args.GP_joint
             fixed_inducing_points = not args.ip_joint
@@ -109,7 +89,7 @@ def run_experiment(args):
                                                                                  clipping_qs=args.clip_qs)
 
         # The actual loss functions
-        loss = -tf.reduce_mean(elbo)
+        loss = - tf.reduce_mean(elbo)
         e_elb = tf.reduce_mean(elbo)
         e_pkl = tf.reduce_mean(pkl)
         e_rec = tf.reduce_mean(rec)
@@ -141,82 +121,21 @@ def run_experiment(args):
 
         # Initializer ops for the graph and saver
         init_op = tf.global_variables_initializer()
-        saver = tf.compat.v1.train.Saver()
-
-        if args.save:
-            # Results to be tracked and Pandas saver
-            res_vars = [global_step,
-                        loss,
-                        e_elb,
-                        e_rec,
-                        e_pkl,
-                        tf.math.reduce_min(q_v),
-                        tf.math.reduce_max(q_v),
-                        tf.math.reduce_min(p_v),
-                        tf.math.reduce_max(p_v),
-                        tf.math.reduce_min(q_m),
-                        tf.math.reduce_max(q_m),
-                        tf.math.reduce_min(p_m),
-                        tf.math.reduce_max(p_m),
-                        l_GP_x,
-                        l_GP_y]
-            if 'SVGPVAE' in args.elbo:
-                res_vars += [e_l3_elbo,
-                             e_ce_term,
-                             e_l3_elbo_recon,
-                             e_l3_elbo_kl,
-                             inducing_points_x,
-                             inducing_points_y,
-                             gp_cov_full_mean_x,
-                             gp_cov_full_mean_y]
-            res_names= ["Step",
-                        "Loss",
-                        "Train ELBO",
-                        "Train Reconstruction",
-                        "Train Prior KL",
-                        "min qs_var",
-                        "max qs_var",
-                        "min q_var",
-                        "max q_var",
-                        'min qs_mean',
-                        'max qs_mean',
-                        'min q_mean',
-                        'max q_mean',
-                        "l_GP_x",
-                        "l_GP_y"]
-            if 'SVGPVAE' in args.elbo:
-                res_names += ['SVGP elbo',
-                              'ce term',
-                              'SVGP elbo recon',
-                              'SVGP elbo KL',
-                               'inducing_points_x',
-                              'inducing_points_y',
-                              'gp_cov_full_mean_x',
-                              'gp_cov_full_mean_y']
-            res_names += ["MSE",  "Beta",  "Time"]
-            res_saver = pandas_res_saver(res_file, res_names)
 
         # Now let's start doing some computation!
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.ram)
         with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
-
-            # Attempt to restore weights
-            try:
-                saver.restore(sess, tf.train.latest_checkpoint(chkpnt_dir))
-                print("\n\nRestored Model Weights")
-            except:
-                sess.run(init_op)
-                print("\n\nInitialised Model Weights")
+            sess.run(init_op)
+            print("\n\nInitialised Model Weights")
 
             # Start training that elbo!
-
             for t in range(args.steps):
 
                 # Train: do an optim step
                 _, g_s = sess.run([optim_step, global_step], {beta: args.beta0})
 
                 # Print out diagnostics/tracking
-                if g_s % 1000 == 0:
+                if g_s % args.num_print_epochs == 0:
                     TD = Test_Batches[0][1]
                     if 'SVGPVAE' in args.elbo:
                         test_elbo, e_rec_i, e_pkl_i, e_l3_elbo_i, e_ce_term_i, e_l3_elbo_recon_i, e_l3_elbo_kl_i = \
@@ -239,61 +158,48 @@ def run_experiment(args):
                     print("VAE posterior mean range: min {}, max {}".format(np.min(test_qm), np.max(test_qm)))
                     print("GP approx posterior variance range: min {}, max {}".format(np.min(test_pv), np.max(test_pv)))
                     print("GP approx posterior mean range: min {}, max {}".format(np.min(test_pm), np.max(test_pm)))
-
-                # Save elbo, recon, priorKL....
-                if g_s % 1000 == 0:
-                    TT, TD = Test_Batches[0]
-                    p_m_i, p_v_i = sess.run([p_m, p_v], {vid_batch: TD, beta: 1})
-
-                    _, _, MSE, _ = MSE_rotation(p_m_i, TT, p_v_i)
-                    print('MSE : {}'.format(MSE))
-
-                    if args.save:
-                        new_res = sess.run(res_vars, {vid_batch: TD, beta: 1})
-                        new_res += [MSE, args.beta0, time.time()]
-                        res_saver(new_res)
+                    print(" ")
 
                 # show plot and occasionally save
-                if g_s % 10000 == 0 and (args.save or args.show_pics):
-                    # [[ax_ij.clear() for ax_ij in ax_i] for ax_i in ax]
+                if g_s == args.steps and args.save:
+                    # Make a folder to save everything
+                    extra = args.elbo + f'_GP_{args.GP_joint}'
+                    if 'SVGPVAE' in args.elbo:
+                        extra = extra + '_M' + f'{args.m}' + f'_IP_{args.ip_joint}'
+                    chkpnt_dir = make_checkpoint_folder(args.base_dir, args.expid, extra)
+                    print("\nCheckpoint Directory:\n" + str(chkpnt_dir) + "\n")
+
                     TT, TD = Test_Batches[0]
                     reconpath, reconvar, reconvid = sess.run([p_m, p_v, pred_vid], {vid_batch:TD, beta:1})
 
                     rp, W, MSE, rv = MSE_rotation(reconpath, TT, reconvar)
-                    _ = plot_latents(TD, TT, reconvid, rp, rv, ax=ax, nplots=4)
-                    # plt.tight_layout()
+                    _ = plot_latents(TD, TT, reconvid, rp, rv, ax=None, nplots=10)
                     plt.draw()
-                    fig.suptitle(str(g_s)+' ELBO: ' + str(test_elbo))
+                    plt.savefig(chkpnt_dir + str(g_s).zfill(6)+".pdf", bbox_inches='tight')
 
-                    if args.squares_circles:
-                        q_m_c = sess.run(q_m, {vid_batch: batch_V_c})
-                        q_m_sq = sess.run(q_m, {vid_batch: batch_V_sq})
+                    print("===== Model Evaluation =====")
+                    path_coll, target_path_coll, rec_img_coll, target_img_coll, se_coll = [], [], [], [], []
+                    for i in range(10):
+                        TT, TD = Test_Batches[i]
+                        reconpath, reconvar, reconvid = sess.run([p_m, p_v, pred_vid], {vid_batch: TD, beta: 1})
 
-                        # import pdb; pdb.set_trace()
-
-                        q_m_c = np.hstack([ q_m_c[0,:,:], np.ones((tmax, 1))])
-                        rot_qnet_c = np.matmul(q_m_c, W)
-                        plot_circle(ax[3][0], ax[3][1], rot_qnet_c)
-
-                        q_m_sq = np.hstack([ q_m_sq[0,:,:], np.ones((tmax, 1))])
-                        rot_qnet_sq = np.matmul(q_m_sq, W)
-                        plot_square(ax[3][2], ax[3][3], rot_qnet_sq)
-
-                    if args.show_pics:
-                        plt.show()
-                        plt.pause(0.01)
-                    if args.save:
-                        plt.savefig(pic_folder + str(g_s).zfill(6)+".png")
-
-                # Save NN weights
-                if args.save and g_s % 50000 == 0:
-                    saver.save(sess, chkpnt_dir+"model", global_step=g_s)
-                    print("\n\nModel Saved: " + chkpnt_dir +"\n\n")
-
-                # Save predicted trajectories for plotting purposes
-                if args.save and g_s % 50000 == 0:
-                    preds = (TD, TT, reconvid, rp, rv)
-                    pickle.dump(preds, open(chkpnt_dir + "preds/preds_{}.p".format(g_s), "wb"))
+                        rp, W, MSE, rv = MSE_rotation(reconpath, TT, reconvar)
+                        MSE = MSE / batch
+                        for coll, obj in ((path_coll, rp), (target_path_coll, TT),
+                                          (rec_img_coll, reconvid), (target_img_coll, TD), (se_coll, MSE)):
+                            coll.append(obj)
+                    path_coll, target_path_coll = np.concatenate(path_coll, axis=-3), np.concatenate(target_path_coll,
+                                                                                                     axis=-3)
+                    rec_img_coll, target_img_coll = np.concatenate(rec_img_coll, axis=-4), np.concatenate(
+                        target_img_coll, axis=-4)
+                    se_coll = np.array(se_coll)
+                    print(f"Mean SE: {np.mean(se_coll)}, Std: {np.std(se_coll)}; \nSE: {se_coll}\n")
+                    everything_for_imgs = {
+                        'path_coll': path_coll, 'target_path_coll': target_path_coll,  # [10*v,f,2]
+                        'rec_img_coll': rec_img_coll, 'target_img_coll': target_img_coll,  # [10*v,f,32,32]
+                        'se_coll': se_coll
+                    }
+                    pickle.dump(everything_for_imgs, open(chkpnt_dir + "/everything.pkl", "wb"))
 
 
 if __name__=="__main__":
@@ -302,6 +208,8 @@ if __name__=="__main__":
 
     parser = argparse.ArgumentParser(description='Moving ball experiment')
     parser.add_argument('--steps', type=int, default=25000, help='Number of steps of Adam')
+    parser.add_argument('--num_print_epochs', type=int, default=500, help='Number of epochs of printing')
+
     parser.add_argument('--beta0', type=float, default=1, help='initial beta annealing value')
     parser.add_argument('--elbo', type=str, choices=['GPVAE_Pearce', 'VAE', 'NP', 'SVGPVAE_Hensman', 'SVGPVAE_Titsias'],
                         default='GPVAE_Pearce',
@@ -317,7 +225,6 @@ if __name__=="__main__":
     parser.add_argument('--ip_joint', action="store_true", help='Inducing points joint optimization.')
     parser.add_argument('--clip_qs', action="store_true", help='Clip variance of inference network.')
 
-    parser.add_argument('--show_pics', action="store_true", help='Show images during training.')
     parser.add_argument('--save', action="store_true", help='Save model metrics in Pandas df as well as images.')
     parser.add_argument('--squares_circles', action="store_true", help='Whether or not to plot squares and circles.')
 
@@ -331,7 +238,10 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
+    s = time.time()
     run_experiment(args)
+    e = time.time()
+    print(f'running time: {e - s}')
 
 
 
