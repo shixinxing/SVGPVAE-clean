@@ -133,7 +133,13 @@ class SVGP:
 
             KL_term = 0.5*(K_mm_log_det - S_log_det - m +
                            tf.trace(tf.matmul(K_mm_inv, A_hat)) +
-                           tf.reduce_sum(mu_hat * tf.linalg.matvec(K_mm_inv, mu_hat)))
+                           tf.reduce_sum(mu_hat * tf.linalg.matvec(K_mm_inv, mu_hat), axis=1))
+            # or
+            KL_term = 0.5 * (K_mm_log_det - S_log_det - m +
+                             tf.trace(tf.matmul(K_mm_inv, A_hat)) +
+                             tf.reduce_sum(
+                                 mu_hat * tf.squeeze(tf.matmul(K_mm_inv, tf.expand_dims(mu_hat, axis=-1)), axis=-1),
+                                 axis=1))
 
             return L_3_sum_term, KL_term
 
