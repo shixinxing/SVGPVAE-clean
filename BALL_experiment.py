@@ -73,12 +73,14 @@ def run_experiment(args):
             titsias = 'Titsias' in args.elbo
             fixed_gp_params = not args.GP_joint
             fixed_inducing_points = not args.ip_joint
+
+            # ⚠️ I use different starting timestamp for inducing points
             svgp_x_ = SVGP(titsias=titsias, num_inducing_points=m,
                            fixed_inducing_points=fixed_inducing_points,
-                           tmin=1, tmax=tmax, vidlt=vid_lt, fixed_gp_params=fixed_gp_params, name='x',
+                           tmin=0, tmax=tmax-1, vidlt=vid_lt, fixed_gp_params=fixed_gp_params, name='x',
                            jitter=args.jitter, ip_min=args.ip_min, ip_max=args.ip_max, GP_init=args.GP_init)
             svgp_y_ = SVGP(titsias=titsias, num_inducing_points=m, fixed_inducing_points=fixed_inducing_points,
-                           tmin=1, tmax=tmax, vidlt=vid_lt, fixed_gp_params=fixed_gp_params, name='y',
+                           tmin=0, tmax=tmax-1, vidlt=vid_lt, fixed_gp_params=fixed_gp_params, name='y',
                            jitter=args.jitter, ip_min=args.ip_min, ip_max=args.ip_max, GP_init=args.GP_init)
 
             elbo, rec, pkl, l3_elbo, ce_term,\
@@ -225,7 +227,7 @@ if __name__ == "__main__":
     parser.add_argument('--ram', type=float, default=0.5, help='fraction of GPU ram to use')
     parser.add_argument('--seed', type=int, default=None, help='seed for rng')
     parser.add_argument('--tmax', type=int, default=30, help='length of videos')
-    parser.add_argument('--m', type=int, default=15, help='number of inducing points')
+    parser.add_argument('--m', type=int, default=10, help='number of inducing points')
     parser.add_argument('--GP_joint', action="store_true", help='GP hyperparams joint optimization.')
     parser.add_argument('--ip_joint', action="store_true", help='Inducing points joint optimization.')
     parser.add_argument('--clip_qs', action="store_true", help='Clip variance of inference network.')
@@ -233,9 +235,11 @@ if __name__ == "__main__":
     parser.add_argument('--save', action="store_true", help='Save model metrics in Pandas df as well as images.')
     parser.add_argument('--squares_circles', action="store_true", help='Whether or not to plot squares and circles.')
 
-    parser.add_argument('--ip_min', type=int, default=1, help='ip start')
-    parser.add_argument('--ip_max', type=int, default=30, help='ip end')
-    parser.add_argument('--jitter', type=float, default=1e-9, help='noise for GP operations (inverse, cholesky)')
+    # ⚠️ different starting timestamp
+    parser.add_argument('--ip_min', type=int, default=0, help='ip start')
+    parser.add_argument('--ip_max', type=int, default=29, help='ip end')
+
+    parser.add_argument('--jitter', type=float, default=1e-6, help='noise for GP operations (inverse, cholesky)')
     parser.add_argument('--clip_grad', action="store_true", help='Whether or not to clip gradients.')
     parser.add_argument('--vidlt', type=float, default=2, help='time scale for data generation')
     parser.add_argument('--GP_init', type=float, default=2,
