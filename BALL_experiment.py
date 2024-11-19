@@ -125,6 +125,7 @@ def run_experiment(args):
         # Now let's start doing some computation!
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.ram)
         with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
+            s = time.time()
             sess.run(init_op)
             print("\n\nInitialised Model Weights")
 
@@ -162,6 +163,8 @@ def run_experiment(args):
 
                 # show plot and occasionally save
                 if g_s == args.steps and args.save:
+                    e = time.time()
+                    print(f"Run time: {e - s}.\n")
                     # Make a folder to save everything
                     extra = args.elbo + f'_GP_{args.GP_joint}'
                     if 'SVGPVAE' in args.elbo:
@@ -200,9 +203,11 @@ def run_experiment(args):
                         'se_coll': se_coll
                     }
                     pickle.dump(everything_for_imgs, open(chkpnt_dir + "/everything.pkl", "wb"))
+                    print("The experimental results are saved at:")
+                    print(f"{chkpnt_dir[:-1]}")
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
 
     default_base_dir = os.getcwd()
 
@@ -238,10 +243,7 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    s = time.time()
     run_experiment(args)
-    e = time.time()
-    print(f'running time: {e - s}')
 
 
 
