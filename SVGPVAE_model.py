@@ -128,13 +128,12 @@ class SVGP:
             # KL term
             K_mm_chol = tf.linalg.cholesky(_add_diagonal_jitter(K_mm, self.jitter))
             S_chol = tf.linalg.cholesky(_add_diagonal_jitter(A_hat, self.jitter))
-            K_mm_log_det = 2*tf.reduce_sum(tf.log(tf.linalg.diag_part(K_mm_chol)))
-            S_log_det = 2*tf.reduce_sum(tf.log(tf.linalg.diag_part(S_chol)))
+            K_mm_log_det = 2*tf.reduce_sum(tf.log(tf.linalg.diag_part(K_mm_chol)), axis=-1)
+            S_log_det = 2*tf.reduce_sum(tf.log(tf.linalg.diag_part(S_chol)), axis=-1)
 
             KL_term = 0.5*(K_mm_log_det - S_log_det - m +
                            tf.trace(tf.matmul(K_mm_inv, A_hat)) +
-                           tf.reduce_sum(A_hat *
-                                         tf.linalg.matvec(K_mm_inv, A_hat)))
+                           tf.reduce_sum(mu_hat * tf.linalg.matvec(K_mm_inv, mu_hat)))
 
             return L_3_sum_term, KL_term
 
