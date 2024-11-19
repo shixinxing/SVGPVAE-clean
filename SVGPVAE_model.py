@@ -659,7 +659,10 @@ def build_SVGPVAE_elbo_graph(vid_batch, beta, svgp_x, svgp_y, clipping_qs=False)
     batch, tmax, px, py = [int(s) for s in vid_batch.get_shape()]
 
     dt = vid_batch.dtype
-    T = tf.range(tmax, dtype=dt) + 1.0  # to have range between 1-30 instead of 0-29
+    # T = tf.range(tmax, dtype=dt) + 1.0  # to have range between 1-30 instead of 0-29
+    # ⚠️ Here, I used `0` as starting index
+    T = tf.range(tmax, dtype=dt)
+
     batch_T = tf.concat([tf.reshape(T, (1, tmax)) for i in range(batch)], 0)
 
     # ENCODER NETWORK
