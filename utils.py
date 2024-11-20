@@ -86,8 +86,8 @@ def Make_Video_batch(tmax=50,
         traj[:, :, 0] = traj[:, :, 0] * (px / 5) + (0.5 * px)
         traj[:, :, 1] = traj[:, :, 1] * (py / 5) + (0.5 * py)
     else:
-        traj[:, :, 0] = traj[:, :, 0] * (px / 6.5) + (0.5 * px)
-        traj[:, :, 1] = traj[:, :, 1] * (py / 6.5) + (0.5 * py)
+        traj[:, :, 0] = np.clip(traj[:, :, 0] / 3 * (px / 2 - r), a_min=-(px / 2 - r), a_max=(px / 2 - r)) + (0.5 * px)
+        traj[:, :, 1] = np.clip(traj[:, :, 1] / 3 * (py / 2 - r), a_min=-(py / 2 - r), a_max=(py / 2 - r)) + (0.5 * py)
 
     rr = r*r
 
@@ -116,8 +116,9 @@ def Make_Video_batch(tmax=50,
     vid_batch = [pixelate_series(traj_i) for traj_i in traj]
 
     vid_batch = np.asarray(vid_batch)
-
-    return traj0, vid_batch
+    # ⚠️ here I returned the rescaled paths instead of the original ones, leading to larger MSE in terms of value
+    # return traj0, vid_batch
+    return traj, vid_batch
 
 
 def play_video(vid_batch, j=0):
